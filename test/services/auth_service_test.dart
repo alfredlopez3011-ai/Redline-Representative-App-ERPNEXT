@@ -73,10 +73,10 @@ void main() {
       );
     });
 
-    test('keeps an explicit http:// as-is', () {
+    test('upgrades an explicit http:// to encrypted https', () {
       expect(
         AuthService.normalizeDomain('http://company.redtch.com'),
-        'http://company.redtch.com',
+        'https://company.redtch.com',
       );
     });
 

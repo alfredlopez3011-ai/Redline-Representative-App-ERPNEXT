@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#0d0d0d"/><stop offset="1" stop-color="#2a0d0d"/></linearGradient></defs>
+  <rect width="1024" height="500" fill="url(#g)"/>
+  <circle cx="870" cy="80" r="220" fill="#d62828" opacity=".12"/>
+  <circle cx="90" cy="520" r="260" fill="#d62828" opacity=".1"/>
+  <g transform="translate(680 92) scale(.31)" fill="#d62828">
+    <polygon points="921.08 591.68 646.47 593.13 376.56 321.64 28.95 317.01 27.76 42.12 299.65 40.25 573.86 313.33 918.96 314.43 921.08 591.68"/>
+    <polygon points="31.26 959 25.85 681.86 302.31 409.18 307.35 953.93 31.26 959"/>
+    <polygon points="920.7 955.81 371.09 958.16 372.9 683.8 920.02 680.47 920.7 955.81"/>
+  </g>
+  <text x="72" y="220" fill="#fff" font-family="Arial,sans-serif" font-size="82" font-weight="700">RedLine</text>
+  <text x="76" y="286" fill="#eee" font-family="Arial,sans-serif" font-size="28">Mobile ERP for field operations</text>
+  <rect x="76" y="328" width="180" height="8" rx="4" fill="#d62828"/>
+</svg>

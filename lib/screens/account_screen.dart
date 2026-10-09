@@ -174,9 +174,32 @@ class _AccountScreenState extends State<AccountScreen> {
                   _biometricSupported
                       ? 'يطلب تأكيد بصمتك عند فتح التطبيق'
                       : 'الجهاز لا يدعم البصمة أو لم يتم تفعيلها في إعدادات الجهاز',
-                  style: const TextStyle(color: AppColors.midGray, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.midGray,
+                    fontSize: 12,
+                  ),
                 ),
-                secondary: const Icon(Icons.fingerprint_rounded, color: AppColors.accent),
+                secondary: const Icon(
+                  Icons.fingerprint_rounded,
+                  color: AppColors.accent,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(AppRadius.card),
+              ),
+              child: ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined),
+                title: const Text(
+                  'سياسة الخصوصية',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: const Text('كيفية استخدام وحماية بياناتك'),
+                trailing: const Icon(Icons.chevron_left_rounded),
+                onTap: () => context.push('/privacy-policy'),
               ),
             ),
             const SizedBox(height: 24),

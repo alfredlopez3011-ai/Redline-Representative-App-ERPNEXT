@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/auth_service.dart';
 import '../services/erp_service.dart';
 import '../services/prefetch_service.dart';
-import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/server_status_icon.dart';
 import 'document_detail_screen.dart';
@@ -148,44 +146,6 @@ class _HomeScreenState extends State<HomeScreen> {
     // Sales Invoices/... read from, so opening one later on a weak
     // connection paints instantly instead of waiting on a live call.
     PrefetchService.warmCachesOnce();
-    _checkForUpdate();
-  }
-
-  /// Best-effort, silent unless there's actually something newer — asks
-  /// GitHub directly since this app isn't distributed via Play Store (see
-  /// `UpdateService`). Never blocks the home screen from rendering.
-  Future<void> _checkForUpdate() async {
-    final update = await UpdateService.checkForUpdate();
-    if (!mounted || update == null) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.card),
-        ),
-        title: const Text('يوجد تحديث جديد'),
-        content: Text(
-          'نسخة جديدة (${update.version}) من التطبيق متاحة للتحميل.'
-          '${update.notes != null && update.notes!.isNotEmpty ? '\n\n${update.notes}' : ''}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('لاحقًا'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              await launchUrl(
-                Uri.parse(update.downloadUrl),
-                mode: LaunchMode.externalApplication,
-              );
-            },
-            child: const Text('تحديث الآن'),
-          ),
-        ],
-      ),
-    );
   }
 
   /// A region manager gets a different home screen entirely (team-focused

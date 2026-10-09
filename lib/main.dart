@@ -21,6 +21,7 @@ import 'screens/notifications_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/payment_entry_screen.dart';
 import 'screens/pending_approvals_screen.dart';
+import 'screens/privacy_policy_screen.dart';
 import 'screens/sales_invoice_screen.dart';
 import 'screens/sales_order_screen.dart';
 import 'screens/splash_screen.dart';
@@ -82,6 +83,10 @@ final _router = GoRouter(
     GoRoute(
       path: '/account',
       builder: (context, state) => const AccountScreen(),
+    ),
+    GoRoute(
+      path: '/privacy-policy',
+      builder: (context, state) => const PrivacyPolicyScreen(),
     ),
     GoRoute(
       path: '/sales-order',
