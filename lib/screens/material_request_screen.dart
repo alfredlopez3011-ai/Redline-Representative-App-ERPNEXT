@@ -253,7 +253,12 @@ class _MaterialRequestScreenState extends State<MaterialRequestScreen>
       return true;
     } catch (e) {
       if (!mounted) return false;
-      handleErpError(context, e);
+      final message = handleErpError(context, e);
+      if (message != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: AppColors.accent),
+        );
+      }
       setState(() => _receivingName = null);
       return false;
     }
