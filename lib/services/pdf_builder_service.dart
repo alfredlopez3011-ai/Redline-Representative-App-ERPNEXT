@@ -41,7 +41,9 @@ class PdfBuilderService {
     required String name,
     required Map<String, dynamic> doc,
   }) async {
-    final regularFont = await _loadFont('assets/fonts/IBMPlexSansArabic-Regular.ttf');
+    final regularFont = await _loadFont(
+      'assets/fonts/IBMPlexSansArabic-Regular.ttf',
+    );
     final boldFont = await _loadFont('assets/fonts/IBMPlexSansArabic-Bold.ttf');
 
     final pdfDoc = pw.Document(
@@ -65,7 +67,10 @@ class PdfBuilderService {
 
     final items = doc['items'];
     final itemRows = items is List
-        ? items.whereType<Map>().map((i) => Map<String, dynamic>.from(i)).toList()
+        ? items
+              .whereType<Map>()
+              .map((i) => Map<String, dynamic>.from(i))
+              .toList()
         : <Map<String, dynamic>>[];
 
     pdfDoc.addPage(
@@ -79,13 +84,22 @@ class PdfBuilderService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text(name, style: pw.TextStyle(font: boldFont, fontSize: 11)),
+                pw.Text(
+                  name,
+                  style: pw.TextStyle(font: boldFont, fontSize: 11),
+                ),
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
-                    pw.Text(title, style: pw.TextStyle(font: boldFont, fontSize: 18)),
+                    pw.Text(
+                      title,
+                      style: pw.TextStyle(font: boldFont, fontSize: 18),
+                    ),
                     if (company.isNotEmpty)
-                      pw.Text(company, style: pw.TextStyle(font: regularFont, fontSize: 11)),
+                      pw.Text(
+                        company,
+                        style: pw.TextStyle(font: regularFont, fontSize: 11),
+                      ),
                   ],
                 ),
               ],
@@ -99,7 +113,11 @@ class PdfBuilderService {
             pw.Divider(thickness: 0.5),
             pw.Text(
               'صفحة ${context.pageNumber} من ${context.pagesCount}',
-              style: pw.TextStyle(font: regularFont, fontSize: 9, color: PdfColors.grey600),
+              style: pw.TextStyle(
+                font: regularFont,
+                fontSize: 9,
+                color: PdfColors.grey600,
+              ),
             ),
           ],
         ),
@@ -108,8 +126,10 @@ class PdfBuilderService {
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              if (date != null) _labelValue(regularFont, boldFont, 'التاريخ', date),
-              if (partyName != null) _labelValue(regularFont, boldFont, 'العميل', partyName),
+              if (date != null)
+                _labelValue(regularFont, boldFont, 'التاريخ', date),
+              if (partyName != null)
+                _labelValue(regularFont, boldFont, 'العميل', partyName),
             ],
           ),
           pw.SizedBox(height: 18),
@@ -127,7 +147,9 @@ class PdfBuilderService {
             ),
             pw.SizedBox(height: 4),
             pw.Text(
-              (doc['terms'] as String).replaceAll(RegExp(r'<[^>]*>'), '').trim(),
+              (doc['terms'] as String)
+                  .replaceAll(RegExp(r'<[^>]*>'), '')
+                  .trim(),
               style: pw.TextStyle(font: regularFont, fontSize: 9.5),
             ),
           ],
@@ -148,14 +170,20 @@ class PdfBuilderService {
     required List<Map<String, dynamic>> rows,
     required num currentBalance,
   }) async {
-    final regularFont = await _loadFont('assets/fonts/IBMPlexSansArabic-Regular.ttf');
+    final regularFont = await _loadFont(
+      'assets/fonts/IBMPlexSansArabic-Regular.ttf',
+    );
     final boldFont = await _loadFont('assets/fonts/IBMPlexSansArabic-Bold.ttf');
 
     final pdfDoc = pw.Document(
       theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
     );
 
-    final headerStyle = pw.TextStyle(font: boldFont, fontSize: 10, color: PdfColors.white);
+    final headerStyle = pw.TextStyle(
+      font: boldFont,
+      fontSize: 10,
+      color: PdfColors.white,
+    );
     final cellStyle = pw.TextStyle(font: regularFont, fontSize: 9.5);
 
     pdfDoc.addPage(
@@ -179,7 +207,11 @@ class PdfBuilderService {
             pw.Divider(thickness: 0.5),
             pw.Text(
               'صفحة ${context.pageNumber} من ${context.pagesCount}',
-              style: pw.TextStyle(font: regularFont, fontSize: 9, color: PdfColors.grey600),
+              style: pw.TextStyle(
+                font: regularFont,
+                fontSize: 9,
+                color: PdfColors.grey600,
+              ),
             ),
           ],
         ),
@@ -255,6 +287,94 @@ class PdfBuilderService {
     return pdfDoc.save();
   }
 
+  static Future<Uint8List> buildStockStatementPdf({
+    required String warehouseLabel,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    final regularFont = await _loadFont(
+      'assets/fonts/IBMPlexSansArabic-Regular.ttf',
+    );
+    final boldFont = await _loadFont('assets/fonts/IBMPlexSansArabic-Bold.ttf');
+    final pdfDoc = pw.Document(
+      theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
+    );
+    final headerStyle = pw.TextStyle(
+      font: boldFont,
+      fontSize: 8.5,
+      color: PdfColors.white,
+    );
+    final cellStyle = pw.TextStyle(font: regularFont, fontSize: 7.5);
+    pdfDoc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        textDirection: pw.TextDirection.rtl,
+        margin: const pw.EdgeInsets.all(24),
+        header: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children: [
+            pw.Text(
+              'كشف حركة المخزن — $warehouseLabel',
+              style: pw.TextStyle(font: boldFont, fontSize: 16),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Divider(),
+          ],
+        ),
+        footer: (context) => pw.Text(
+          'صفحة ${context.pageNumber} من ${context.pagesCount}',
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(font: regularFont, fontSize: 8),
+        ),
+        build: (_) => [
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.grey300, width: .5),
+            children: [
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey800),
+                children: [
+                  for (final label in const [
+                    'الرصيد',
+                    'الحركة',
+                    'دفعة / سيريال',
+                    'المستند',
+                    'المخزن',
+                    'الصنف',
+                    'التاريخ',
+                  ])
+                    _cell(label, headerStyle, pad: 5),
+                ],
+              ),
+              ...rows.map(
+                (row) => pw.TableRow(
+                  children: [
+                    _cell(_fmt(row['balance']), cellStyle),
+                    _cell(_fmt(row['qty']), cellStyle),
+                    _cell(
+                      [row['batch'], row['serial']]
+                          .where(
+                            (value) => value?.toString().isNotEmpty ?? false,
+                          )
+                          .join(' / '),
+                      cellStyle,
+                    ),
+                    _cell(
+                      '${row['voucherType'] ?? ''} ${row['voucherNo'] ?? ''}',
+                      cellStyle,
+                    ),
+                    _cell(row['warehouse']?.toString() ?? '', cellStyle),
+                    _cell(row['item']?.toString() ?? '', cellStyle),
+                    _cell(row['date']?.toString() ?? '', cellStyle),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    return pdfDoc.save();
+  }
+
   static pw.Widget _labelValue(
     pw.Font regularFont,
     pw.Font boldFont,
@@ -266,7 +386,11 @@ class PdfBuilderService {
       children: [
         pw.Text(
           label,
-          style: pw.TextStyle(font: regularFont, fontSize: 9, color: PdfColors.grey600),
+          style: pw.TextStyle(
+            font: regularFont,
+            fontSize: 9,
+            color: PdfColors.grey600,
+          ),
         ),
         pw.SizedBox(height: 2),
         pw.Text(value, style: pw.TextStyle(font: boldFont, fontSize: 11)),
@@ -279,7 +403,11 @@ class PdfBuilderService {
     pw.Font boldFont,
     List<Map<String, dynamic>> rows,
   ) {
-    final headerStyle = pw.TextStyle(font: boldFont, fontSize: 10, color: PdfColors.white);
+    final headerStyle = pw.TextStyle(
+      font: boldFont,
+      fontSize: 10,
+      color: PdfColors.white,
+    );
     final cellStyle = pw.TextStyle(font: regularFont, fontSize: 9.5);
 
     return pw.Table(
@@ -301,7 +429,17 @@ class PdfBuilderService {
           ],
         ),
         ...rows.map((item) {
-          final itemName = (item['item_name'] ?? item['item_code'] ?? '—').toString();
+          final baseName = (item['item_name'] ?? item['item_code'] ?? '—')
+              .toString();
+          final tracking = <String>[
+            if ((item['batch_no']?.toString().trim().isNotEmpty ?? false))
+              'دفعة: ${item['batch_no']}',
+            if ((item['serial_no']?.toString().trim().isNotEmpty ?? false))
+              'سيريال: ${item['serial_no'].toString().replaceAll('\n', '، ')}',
+          ];
+          final itemName = tracking.isEmpty
+              ? baseName
+              : '$baseName\n${tracking.join(' • ')}';
           final qty = item['qty'];
           final rate = item['rate'];
           final amount = item['amount'];

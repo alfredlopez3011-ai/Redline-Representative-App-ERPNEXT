@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 
 import '../services/auth_service.dart';
 import '../services/erp_service.dart';
+import '../services/pdf_builder_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/erp_error_handling.dart';
 import '../widgets/loading_indicator.dart';
@@ -18,6 +20,8 @@ class _MovementRow {
     required this.qtyAfter,
     required this.voucherType,
     required this.voucherNo,
+    required this.batchNos,
+    required this.serialNos,
   });
 
   final String itemCode;
@@ -29,6 +33,8 @@ class _MovementRow {
   final double qtyAfter;
   final String voucherType;
   final String voucherNo;
+  final String batchNos;
+  final String serialNos;
 }
 
 /// حركة المخزون — يعرض `Stock Ledger Entry` الحقيقية (نفس الدوكتايب اللي
@@ -61,6 +67,7 @@ class _StockMovementScreenState extends State<StockMovementScreen>
   bool _loadingWarehouseMovements = false;
   List<_MovementRow> _warehouseMovements = [];
   String? _warehouseMovementsError;
+  bool _exportingPdf = false;
 
   // "حركة صنف" tab.
   PickedRecord? _selectedItem;
@@ -143,8 +150,7 @@ class _StockMovementScreenState extends State<StockMovementScreen>
       setState(() {
         for (final r in rows) {
           final name = r['name'] as String;
-          _allowedWarehouses[name] =
-              (r['warehouse_name'] as String?) ?? name;
+          _allowedWarehouses[name] = (r['warehouse_name'] as String?) ?? name;
         }
         _loadingWarehouses = false;
       });
@@ -206,7 +212,11 @@ class _StockMovementScreenState extends State<StockMovementScreen>
         filters: [
           ['name', 'in', repSalesPersons.toList()],
         ],
-        fields: const ['name', 'custom_car_warehouse', 'custom_transit_warehouse'],
+        fields: const [
+          'name',
+          'custom_car_warehouse',
+          'custom_transit_warehouse',
+        ],
         limit: repSalesPersons.length,
       );
 
@@ -260,7 +270,9 @@ class _StockMovementScreenState extends State<StockMovementScreen>
   }
 
   Future<void> _resolveItemNames(Iterable<String> itemCodes) async {
-    final missing = itemCodes.where((c) => !_itemNameCache.containsKey(c)).toSet();
+    final missing = itemCodes
+        .where((c) => !_itemNameCache.containsKey(c))
+        .toSet();
     if (missing.isEmpty) return;
     try {
       final rows = await ErpService.getList(
@@ -294,8 +306,51 @@ class _StockMovementScreenState extends State<StockMovementScreen>
         qtyAfter: (r['qty_after_transaction'] as num?)?.toDouble() ?? 0,
         voucherType: (r['voucher_type'] as String?) ?? '',
         voucherNo: (r['voucher_no'] as String?) ?? '',
+        batchNos: (r['_resolved_batch_nos'] ?? r['batch_no'] ?? '').toString(),
+        serialNos: (r['_resolved_serial_nos'] ?? r['serial_no'] ?? '')
+            .toString(),
       );
     }).toList();
+  }
+
+  Future<void> _resolveSerialBatchBundles(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    final bundleNames = rows
+        .map((row) => row['serial_and_batch_bundle']?.toString())
+        .whereType<String>()
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    if (bundleNames.isEmpty) return;
+    try {
+      final entries = await ErpService.getList(
+        'Serial and Batch Entry',
+        filters: [
+          ['parent', 'in', bundleNames.toList()],
+        ],
+        fields: const ['parent', 'batch_no', 'serial_no'],
+        limit: 2000,
+      );
+      for (final row in rows) {
+        final bundle = row['serial_and_batch_bundle']?.toString();
+        if (bundle == null) continue;
+        final matching = entries.where((entry) => entry['parent'] == bundle);
+        row['_resolved_batch_nos'] = matching
+            .map((entry) => entry['batch_no']?.toString())
+            .whereType<String>()
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .join('، ');
+        row['_resolved_serial_nos'] = matching
+            .map((entry) => entry['serial_no']?.toString())
+            .whereType<String>()
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .join('، ');
+      }
+    } catch (_) {
+      // Older sites may expose only the legacy fields already on SLE.
+    }
   }
 
   Future<void> _loadWarehouseMovements() async {
@@ -319,11 +374,17 @@ class _StockMovementScreenState extends State<StockMovementScreen>
           'qty_after_transaction',
           'voucher_type',
           'voucher_no',
+          'batch_no',
+          'serial_no',
+          'serial_and_batch_bundle',
         ],
         orderBy: 'posting_datetime desc',
-        limit: 100,
+        limit: 1000,
       );
-      await _resolveItemNames(rows.map((r) => (r['item_code'] as String?) ?? ''));
+      await _resolveItemNames(
+        rows.map((r) => (r['item_code'] as String?) ?? ''),
+      );
+      await _resolveSerialBatchBundles(rows);
       if (!mounted) return;
       setState(() {
         _warehouseMovements = _mapRows(rows);
@@ -392,11 +453,15 @@ class _StockMovementScreenState extends State<StockMovementScreen>
           'qty_after_transaction',
           'voucher_type',
           'voucher_no',
+          'batch_no',
+          'serial_no',
+          'serial_and_batch_bundle',
         ],
         orderBy: 'posting_datetime desc',
-        limit: 100,
+        limit: 1000,
       );
       _itemNameCache[item.name] = item.label;
+      await _resolveSerialBatchBundles(rows);
       if (!mounted) return;
       setState(() {
         _itemMovements = _mapRows(rows);
@@ -418,7 +483,9 @@ class _StockMovementScreenState extends State<StockMovementScreen>
       context: context,
       backgroundColor: AppColors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.card),
+        ),
       ),
       builder: (context) {
         return SafeArea(
@@ -459,6 +526,44 @@ class _StockMovementScreenState extends State<StockMovementScreen>
     await Future.wait([_loadWarehouseMovements(), _loadItemMovements()]);
   }
 
+  Future<void> _exportWarehouseStatement() async {
+    if (_exportingPdf || _warehouseMovements.isEmpty) return;
+    setState(() => _exportingPdf = true);
+    try {
+      final selected = _selectedWarehouse;
+      final label = selected == null
+          ? 'كل المخازن المتاحة'
+          : (_allowedWarehouses[selected] ?? selected);
+      final bytes = await PdfBuilderService.buildStockStatementPdf(
+        warehouseLabel: label,
+        rows: _warehouseMovements
+            .map(
+              (row) => {
+                'date': row.postingDate,
+                'item': row.itemName,
+                'warehouse': row.warehouseLabel,
+                'voucherType': row.voucherType,
+                'voucherNo': row.voucherNo,
+                'qty': row.qty,
+                'balance': row.qtyAfter,
+                'batch': row.batchNos,
+                'serial': row.serialNos,
+              },
+            )
+            .toList(),
+      );
+      if (!mounted) return;
+      await Printing.sharePdf(bytes: bytes, filename: 'كشف حركة المخزن.pdf');
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('تعذر إنشاء كشف المخزن: $error')));
+    } finally {
+      if (mounted) setState(() => _exportingPdf = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -470,9 +575,25 @@ class _StockMovementScreenState extends State<StockMovementScreen>
           labelColor: AppColors.accent,
           unselectedLabelColor: AppColors.midGray,
           indicatorColor: AppColors.accent,
-          tabs: const [Tab(text: 'حركة المخزن'), Tab(text: 'حركة صنف')],
+          tabs: const [
+            Tab(text: 'حركة المخزن'),
+            Tab(text: 'حركة صنف'),
+          ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'تصدير كشف المخزن PDF',
+            onPressed: _warehouseMovements.isEmpty || _exportingPdf
+                ? null
+                : _exportWarehouseStatement,
+            icon: _exportingPdf
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.picture_as_pdf_rounded),
+          ),
           if (_allowedWarehouses.length > 1)
             IconButton(
               icon: const Icon(Icons.tune_rounded),
@@ -518,7 +639,10 @@ class _StockMovementScreenState extends State<StockMovementScreen>
     }
     if (_warehouseMovements.isEmpty) {
       return const Center(
-        child: Text('لا توجد حركات', style: TextStyle(color: AppColors.midGray)),
+        child: Text(
+          'لا توجد حركات',
+          style: TextStyle(color: AppColors.midGray),
+        ),
       );
     }
     return RefreshIndicator(
@@ -540,7 +664,10 @@ class _StockMovementScreenState extends State<StockMovementScreen>
               borderRadius: BorderRadius.circular(AppRadius.field),
               onTap: _pickItem,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
                 child: Row(
                   children: [
                     const Icon(Icons.search_rounded, color: AppColors.midGray),
@@ -557,7 +684,10 @@ class _StockMovementScreenState extends State<StockMovementScreen>
                         ),
                       ),
                     ),
-                    const Icon(Icons.chevron_left_rounded, color: AppColors.midGray),
+                    const Icon(
+                      Icons.chevron_left_rounded,
+                      color: AppColors.midGray,
+                    ),
                   ],
                 ),
               ),
@@ -572,7 +702,10 @@ class _StockMovementScreenState extends State<StockMovementScreen>
   Widget _buildItemTabBody() {
     if (_selectedItem == null) {
       return const Center(
-        child: Text('اختر صنف عشان تشوف حركته', style: TextStyle(color: AppColors.midGray)),
+        child: Text(
+          'اختر صنف عشان تشوف حركته',
+          style: TextStyle(color: AppColors.midGray),
+        ),
       );
     }
     if (_loadingItemMovements) return const LoadingIndicator();
@@ -590,7 +723,10 @@ class _StockMovementScreenState extends State<StockMovementScreen>
     }
     if (_itemMovements.isEmpty) {
       return const Center(
-        child: Text('لا توجد حركات لهذا الصنف', style: TextStyle(color: AppColors.midGray)),
+        child: Text(
+          'لا توجد حركات لهذا الصنف',
+          style: TextStyle(color: AppColors.midGray),
+        ),
       );
     }
     return RefreshIndicator(
@@ -600,7 +736,10 @@ class _StockMovementScreenState extends State<StockMovementScreen>
     );
   }
 
-  Widget _buildMovementList(List<_MovementRow> rows, {bool showItemName = true}) {
+  Widget _buildMovementList(
+    List<_MovementRow> rows, {
+    bool showItemName = true,
+  }) {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       itemCount: rows.length,
@@ -641,15 +780,39 @@ class _StockMovementScreenState extends State<StockMovementScreen>
                       showItemName ? row.itemName : row.warehouseLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${showItemName ? row.warehouseLabel : row.itemName} • ${row.voucherType} ${row.voucherNo} • ${row.postingDate}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.midGray, fontSize: 11.5),
+                      style: const TextStyle(
+                        color: AppColors.midGray,
+                        fontSize: 11.5,
+                      ),
                     ),
+                    if (row.batchNos.isNotEmpty)
+                      Text(
+                        'الدفعة: ${row.batchNos}',
+                        style: const TextStyle(
+                          color: AppColors.midGray,
+                          fontSize: 11,
+                        ),
+                      ),
+                    if (row.serialNos.isNotEmpty)
+                      Text(
+                        'السيريال: ${row.serialNos}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.midGray,
+                          fontSize: 11,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -666,7 +829,10 @@ class _StockMovementScreenState extends State<StockMovementScreen>
                   ),
                   Text(
                     'الرصيد: ${row.qtyAfter.toStringAsFixed(2)}',
-                    style: const TextStyle(color: AppColors.midGray, fontSize: 10.5),
+                    style: const TextStyle(
+                      color: AppColors.midGray,
+                      fontSize: 10.5,
+                    ),
                   ),
                 ],
               ),

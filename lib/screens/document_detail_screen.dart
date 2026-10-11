@@ -2109,6 +2109,24 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                             fontSize: 12,
                           ),
                         ),
+                        if (item['batch_no']?.toString().trim().isNotEmpty ??
+                            false)
+                          Text(
+                            'الدفعة: ${item['batch_no']}',
+                            style: const TextStyle(
+                              color: AppColors.midGray,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        if (item['serial_no']?.toString().trim().isNotEmpty ??
+                            false)
+                          Text(
+                            'السيريال: ${item['serial_no'].toString().replaceAll('\n', '، ')}',
+                            style: const TextStyle(
+                              color: AppColors.midGray,
+                              fontSize: 11.5,
+                            ),
+                          ),
                         if (discountPercentage != null &&
                             discountPercentage > 0)
                           Text(

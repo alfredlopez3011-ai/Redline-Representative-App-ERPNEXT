@@ -57,6 +57,8 @@ class _InvoiceLine {
   String? batchNo;
   double? batchAvailableQty;
   String? batchExpiryDate;
+  bool hasSerialNo = false;
+  final List<String> serialNos = [];
 
   /// The original item row from a source Sales Order/Sales Invoice draft
   /// (`make_sales_invoice`/`make_sales_return`) — carried through so
@@ -210,7 +212,15 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
               )
               ..qty = negateQtyForDisplay ? rawQty.abs() : rawQty
               ..unitPrice = map['rate'] as num?
-              ..warehouse = map['warehouse'] as String?;
+              ..warehouse = map['warehouse'] as String?
+              ..batchNo = map['batch_no'] as String?
+              ..hasSerialNo =
+                  ((map['serial_no'] as String?)?.trim().isNotEmpty ?? false);
+        final existingSerials = (map['serial_no'] as String?)
+            ?.split(RegExp(r'[\n,]+'))
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty);
+        if (existingSerials != null) line.serialNos.addAll(existingSerials);
         _lines.add(line);
       }
     }
@@ -490,10 +500,12 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
         filters: [
           ['name', '=', result.name],
         ],
-        fields: const ['has_batch_no'],
+        fields: const ['has_batch_no', 'has_serial_no'],
         limit: 1,
       );
       hasBatchNo = itemRows.isNotEmpty && itemRows.first['has_batch_no'] == 1;
+      line.hasSerialNo =
+          itemRows.isNotEmpty && itemRows.first['has_serial_no'] == 1;
     } catch (_) {
       // فشل التحقق يترك الصنف عاديًا (بدون لوط) بدل ما يوقف الإضافة بالكامل.
     }
@@ -503,6 +515,11 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
       if (!picked) {
         return; // الصنف ده لازم لوط — من غير ما يختار واحد، مش بيتضاف خالص.
       }
+    }
+
+    if (line.hasSerialNo) {
+      final picked = await _pickSerialsForLine(line);
+      if (!picked) return;
     }
 
     setState(() => _lines.add(line));
@@ -515,7 +532,7 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
   /// بيرجع true لو المندوب اختار لوط فعلاً، false لو ألغى أو مفيش أي لوط
   /// متاح خالص (رسالة خطأ واضحة في الحالة التانية بدل صف صامت بلا لوط).
   Future<bool> _pickBatchForLine(_InvoiceLine line) async {
-    final warehouses = await ErpService.getCurrentRepWarehouses();
+    final warehouses = await ErpService.getCurrentRepSellingWarehouses();
     if (warehouses.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -616,6 +633,105 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
     return true;
   }
 
+  Future<void> _addAnotherBatch(_InvoiceLine original) async {
+    final line = _InvoiceLine(
+      itemCode: original.itemCode,
+      itemName: original.itemName,
+      sourceRow: original.sourceRow == null
+          ? null
+          : Map<String, dynamic>.from(original.sourceRow!),
+    )..hasSerialNo = original.hasSerialNo;
+    if (!await _pickBatchForLine(line)) return;
+    if (line.hasSerialNo && !await _pickSerialsForLine(line)) return;
+    if (!mounted) return;
+    setState(() => _lines.add(line));
+    await _fetchPriceForLine(line);
+  }
+
+  Future<bool> _pickSerialsForLine(_InvoiceLine line) async {
+    final warehouses = await ErpService.getCurrentRepSellingWarehouses();
+    if (warehouses.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('لا يوجد مخزن سيارة مرتبط بالمندوب')),
+        );
+      }
+      return false;
+    }
+    final warehouse = line.warehouse ?? warehouses.first;
+    final rows = await ErpService.getAvailableSerialNumbers(
+      itemCode: line.itemCode,
+      warehouse: warehouse,
+    );
+    final available = rows.where((row) {
+      final batch = row['batch_no']?.toString();
+      return line.batchNo == null || batch == line.batchNo;
+    }).toList();
+    if (available.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'لا توجد أرقام سيريال متاحة لهذا الصنف في مخزن السيارة',
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+    if (!mounted) return false;
+
+    final selected = <String>{...line.serialNos};
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('اختر أرقام السيريال'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: available.map((row) {
+                final serial = (row['serial_no'] ?? row['name']).toString();
+                return CheckboxListTile(
+                  value: selected.contains(serial),
+                  title: Text(serial),
+                  subtitle: row['batch_no'] == null
+                      ? null
+                      : Text('الدفعة: ${row['batch_no']}'),
+                  onChanged: (checked) => setDialogState(() {
+                    checked == true
+                        ? selected.add(serial)
+                        : selected.remove(serial);
+                  }),
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, selected.toList()),
+              child: const Text('تأكيد'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null || result.isEmpty) return false;
+    line.warehouse = warehouse;
+    line.qty = result.length.toDouble();
+    line.serialNos
+      ..clear()
+      ..addAll(result);
+    return true;
+  }
+
   /// Runs [_pickBatchForLine] for every current line whose item needs a
   /// batch and doesn't already have one — used after converting a source
   /// order/return into an invoice draft, since that draft's rows never
@@ -659,6 +775,32 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
           ),
         ),
       );
+    }
+  }
+
+  Future<void> _ensureSerialsForLines() async {
+    if (_lines.isEmpty) return;
+    final itemCodes = _lines.map((line) => line.itemCode).toSet().toList();
+    final rows = await ErpService.getList(
+      'Item',
+      filters: [
+        ['name', 'in', itemCodes],
+        ['has_serial_no', '=', 1],
+      ],
+      fields: const ['name'],
+      limit: itemCodes.length,
+    );
+    final tracked = rows.map((row) => row['name'] as String).toSet();
+    final toRemove = <_InvoiceLine>[];
+    for (final line in List<_InvoiceLine>.from(_lines)) {
+      if (!tracked.contains(line.itemCode)) continue;
+      line.hasSerialNo = true;
+      if (line.serialNos.isEmpty && !await _pickSerialsForLine(line)) {
+        toRemove.add(line);
+      }
+    }
+    if (toRemove.isNotEmpty && mounted) {
+      setState(() => _lines.removeWhere(toRemove.contains));
     }
   }
 
@@ -708,6 +850,17 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
   }
 
   Future<void> _pickWarehouseForLine(_InvoiceLine line) async {
+    // Invoices may only consume confirmed stock in the rep's car warehouse.
+    // Transit stock remains visible in stock movement, never in selling.
+    final sellingWarehouses = await ErpService.getCurrentRepSellingWarehouses();
+    if (!mounted) return;
+    if (sellingWarehouses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا يوجد مخزن سيارة مرتبط بالمندوب')),
+      );
+      return;
+    }
+    setState(() => line.warehouse = sellingWarehouses.first);
     final result = await showSearchPicker(
       context: context,
       title: 'اختر المخزن',
@@ -718,6 +871,7 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
           fetch: () => ErpService.getList(
             'Warehouse',
             filters: [
+              ['name', 'in', sellingWarehouses],
               ['disabled', '=', 0],
               ['is_group', '=', 0],
               if (query.isNotEmpty) ['warehouse_name', 'like', '%$query%'],
@@ -727,6 +881,7 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
           ),
           searchFilter: (row) {
             final name = (row['name'] ?? '').toString().toLowerCase();
+            if (!sellingWarehouses.contains(row['name'])) return false;
             final wName = (row['warehouse_name'] ?? '')
                 .toString()
                 .toLowerCase();
@@ -1205,6 +1360,7 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
       // batch-tracked item can't slip onto an invoice without one just
       // because it arrived via conversion instead of manual entry.
       await _ensureBatchesForLines();
+      await _ensureSerialsForLines();
       // Best-effort — credit limit/price-list/outstanding info for the
       // customer the draft came with.
       final customerName = draft['customer'] as String?;
@@ -1231,6 +1387,44 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
   /// `false` هنا معناها فشل حقيقي أو إلغاء — [SwipeToConfirmButton] بيعكسها
   /// كحالة حمراء بدل ما يفترض النجاح لمجرد إن حركة السحب خلصت.
   Future<bool> _submit() async {
+    if (_customer == null || _lines.isEmpty) return false;
+    final sellingWarehouses = await ErpService.getCurrentRepSellingWarehouses();
+    if (sellingWarehouses.isEmpty) {
+      setState(() => _error = 'لا يوجد مخزن سيارة مرتبط بالمندوب');
+      return false;
+    }
+    final sellingWarehouse = sellingWarehouses.first;
+    for (final line in _lines) {
+      line.warehouse = sellingWarehouse;
+    }
+
+    final batchTotals = <String, double>{};
+    final batchAvailable = <String, double>{};
+    for (final line in _lines.where((line) => line.batchNo != null)) {
+      final key = '${line.itemCode}|${line.warehouse}|${line.batchNo}';
+      batchTotals[key] = (batchTotals[key] ?? 0) + line.qty;
+      if (line.batchAvailableQty != null) {
+        batchAvailable[key] = line.batchAvailableQty!;
+      }
+    }
+    for (final entry in batchTotals.entries) {
+      final available = batchAvailable[entry.key];
+      if (available != null && entry.value > available) {
+        setState(() {
+          _error =
+              'الكمية المطلوبة من إحدى الدفعات أكبر من المتاح في مخزن السيارة';
+        });
+        return false;
+      }
+    }
+    for (final line in _lines.where((line) => line.hasSerialNo)) {
+      if (line.serialNos.isEmpty || line.qty != line.serialNos.length) {
+        setState(() {
+          _error = 'اختر رقم سيريال لكل وحدة من الصنف ${line.itemName}';
+        });
+        return false;
+      }
+    }
     final withinCreditLimit = await _checkCreditLimit();
     if (!withinCreditLimit) return false;
 
@@ -1266,6 +1460,9 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
           row['qty'] = signedQty;
           if (line.warehouse != null) row['warehouse'] = line.warehouse;
           if (line.batchNo != null) row['batch_no'] = line.batchNo;
+          if (line.serialNos.isNotEmpty) {
+            row['serial_no'] = line.serialNos.join('\n');
+          }
           // Strip the draft's own row id — this is a fresh create, not an
           // update to an existing child row. Also strip `cost_center`: a
           // source order created before its own cost center was fixed on
@@ -1284,6 +1481,7 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
           'qty': signedQty,
           if (line.warehouse != null) 'warehouse': line.warehouse,
           if (line.batchNo != null) 'batch_no': line.batchNo,
+          if (line.serialNos.isNotEmpty) 'serial_no': line.serialNos.join('\n'),
         };
       }).toList();
 
@@ -1759,7 +1957,7 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
                             ),
                             color: AppColors.accent,
                             visualDensity: VisualDensity.compact,
-                            onPressed: line.qty > 1
+                            onPressed: !line.hasSerialNo && line.qty > 1
                                 ? () => setState(() => line.qty -= 1)
                                 : null,
                           ),
@@ -1781,8 +1979,9 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
                             color: AppColors.accent,
                             visualDensity: VisualDensity.compact,
                             onPressed:
-                                line.batchAvailableQty == null ||
-                                    line.qty < line.batchAvailableQty!
+                                !line.hasSerialNo &&
+                                    (line.batchAvailableQty == null ||
+                                        line.qty < line.batchAvailableQty!)
                                 ? () => setState(() => line.qty += 1)
                                 : null,
                           ),
@@ -1812,7 +2011,11 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
                     onTap: () async {
                       if (line.batchNo != null) {
                         final picked = await _pickBatchForLine(line);
-                        if (picked) setState(() {});
+                        if (picked && line.hasSerialNo) {
+                          line.serialNos.clear();
+                          await _pickSerialsForLine(line);
+                        }
+                        if (picked && mounted) setState(() {});
                       } else {
                         _pickWarehouseForLine(line);
                       }
@@ -1858,6 +2061,29 @@ class _SalesInvoiceScreenState extends State<SalesInvoiceScreen>
                           ),
                         ),
                       ],
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _addAnotherBatch(line),
+                      icon: const Icon(Icons.call_split_rounded, size: 15),
+                      label: const Text('إضافة دفعة أخرى لنفس الصنف'),
+                    ),
+                  ],
+                  if (line.hasSerialNo) ...[
+                    const SizedBox(height: 4),
+                    InkWell(
+                      onTap: () async {
+                        if (await _pickSerialsForLine(line) && mounted) {
+                          setState(() {});
+                        }
+                      },
+                      child: Text(
+                        'السيريال: ${line.serialNos.join('، ')}',
+                        style: const TextStyle(
+                          color: AppColors.accent,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                 ],

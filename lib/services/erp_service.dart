@@ -1002,6 +1002,21 @@ class ErpService {
     }
   }
 
+  /// Warehouses from which the current rep may actually sell. Goods in the
+  /// transit warehouse are still in the custody-transfer flow and must never
+  /// be offered on an invoice before receipt is confirmed.
+  static Future<List<String>> getCurrentRepSellingWarehouses() async {
+    try {
+      final salesPerson = await resolveCurrentSalesPerson();
+      if (salesPerson == null) return const [];
+      final spDoc = await getDoc('Sales Person', salesPerson);
+      final car = (spDoc['custom_car_warehouse'] as String?)?.trim();
+      return car == null || car.isEmpty ? const [] : [car];
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Real, live available quantity per batch for [itemCode] in [warehouse]
   /// â€” `erpnext.stock.doctype.batch.batch.get_batch_qty` (confirmed
   /// whitelisted, real-time from stock ledger/reservations, not the
@@ -1020,6 +1035,24 @@ class ErpService {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+  }
+
+  /// Serial numbers currently available in one selling warehouse.
+  static Future<List<Map<String, dynamic>>> getAvailableSerialNumbers({
+    required String itemCode,
+    required String warehouse,
+  }) {
+    return getList(
+      'Serial No',
+      filters: [
+        ['item_code', '=', itemCode],
+        ['warehouse', '=', warehouse],
+        ['status', '=', 'Active'],
+      ],
+      fields: const ['name', 'serial_no', 'batch_no', 'warehouse'],
+      orderBy: 'creation asc',
+      limit: 500,
+    );
   }
 
   // ---- Confirmed endpoint wrappers -----------------------------------
