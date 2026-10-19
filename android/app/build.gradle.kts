@@ -36,3 +36,7 @@ android {
 flutter {
     source = "../.."
 }
+plugins {
+    id("com.android.application")
+    id("kotlin-android")
+    id("dev.flutter.flutter
